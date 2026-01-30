@@ -9,7 +9,4 @@ pip install --upgrade pip
 echo "Installing Python dependencies..."
 pip install -r requirements.txt
 
-echo "Installing Playwright Chromium browser..."
-python -m playwright install chromium
-
-echo "=== Build Complete ==="
+echo "=== Build Complete (No browser installation needed - using BrowserBase) ==="
