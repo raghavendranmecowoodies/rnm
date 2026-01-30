@@ -1,0 +1,11 @@
+venv/
+.env
+__pycache__/
+*.pyc
+.DS_Store
+linkedin_cookies.json
+*.png
+debug_*.png
+before_login.png
+after_login.png
+profile_page.png
