@@ -1,194 +1,171 @@
-import subprocess
-import sys
 import os
-
-# Auto-install Playwright browsers if not found
-def ensure_playwright_installed():
-    try:
-        from playwright.sync_api import sync_playwright
-        # Try to get browser path
-        with sync_playwright() as p:
-            try:
-                browser = p.chromium.launch(headless=True)
-                browser.close()
-            except Exception:
-                # Browser not found, install it
-                print("Playwright browser not found. Installing...")
-                subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-    except Exception as e:
-        print(f"Error ensuring Playwright: {e}")
-
-# Run at import time
-ensure_playwright_installed()
-
-# Now import the rest
 import json
 import base64
-from agentql.ext.playwright.sync_api import Page, sync_playwright
-from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright
+import agentql
 
-# Load environment variables
-load_dotenv()
+# BrowserBase configuration (optional - for remote browser)
+BROWSERBASE_API_KEY = os.getenv('BROWSERBASE_API_KEY', '')
+BROWSERBASE_PROJECT_ID = os.getenv('BROWSERBASE_PROJECT_ID', '')
 
-def save_cookies_from_manual_login():
-    """
-    Opens browser for manual LinkedIn login and saves cookies
-    """
-    print("\n" + "="*80)
-    print("MANUAL LOGIN - Please follow these steps:")
-    print("="*80)
-    print("1. Browser will open automatically")
-    print("2. Log in to LinkedIn manually")
-    print("3. Wait for the home feed to load completely")
-    print("4. Come back here and press ENTER")
-    print("="*80 + "\n")
+def scrape_linkedin_profile(profile_url):
+    """Scrape LinkedIn profile using AgentQL with BrowserBase support"""
     
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
-        
-        # Go to LinkedIn
-        page.goto("https://www.linkedin.com/login")
-        
-        # Wait for user to login manually
-        input("Press ENTER after you've logged in and see your LinkedIn feed...")
-        
-        # Save cookies
-        cookies = context.cookies()
-        with open('linkedin_cookies.json', 'w') as f:
-            json.dump(cookies, f, indent=2)
-        
-        print("\n✅ Cookies saved to linkedin_cookies.json")
-        
-        browser.close()
-        
-    return cookies
-
-def scrape_linkedin_profile(url, fields=None, linkedin_email=None, linkedin_password=None):
-    """
-    Scrape LinkedIn profile using AgentQL
+    # Get credentials from environment
+    agentql_api_key = os.getenv('AGENTQL_API_KEY')
+    linkedin_email = os.getenv('LINKEDIN_EMAIL')
+    linkedin_password = os.getenv('LINKEDIN_PASSWORD')
+    cookies_base64 = os.getenv('LINKEDIN_COOKIES_BASE64')
     
-    Args:
-        url: LinkedIn profile URL
-        fields: Optional dict of field descriptions to extract
-        linkedin_email: LinkedIn login email
-        linkedin_password: LinkedIn login password
+    if not agentql_api_key:
+        raise Exception("AGENTQL_API_KEY not found in environment variables")
     
-    Returns:
-        dict: Scraped profile data
-    """
-    try:
-        # Load cookies if available
-        cookies = []
-        cookies_base64 = os.getenv('LINKEDIN_COOKIES_BASE64')
-        
-        if cookies_base64:
-            try:
-                cookies_json = base64.b64decode(cookies_base64).decode('utf-8')
-                cookies = json.loads(cookies_json)
-                print("✅ Loaded cookies from environment variable")
-            except Exception as e:
-                print(f"⚠️ Failed to load cookies from env: {e}")
-        
-        # If no cookies from env, try loading from file
-        if not cookies:
-            try:
-                with open('linkedin_cookies.json', 'r') as f:
-                    cookies = json.load(f)
-                print("✅ Loaded cookies from file")
-            except FileNotFoundError:
-                print("⚠️ No cookies found - will need to login")
-        
-        # Start Playwright
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
+    # Configure AgentQL
+    agentql.configure(api_key=agentql_api_key)
+    
+    with sync_playwright() as p:
+        # Choose browser: BrowserBase (remote) or local Chromium
+        if BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID:
+            print("🌐 Using BrowserBase (remote browser)")
+            browser = p.chromium.connect_over_cdp(
+                f"wss://connect.browserbase.com?apiKey={BROWSERBASE_API_KEY}&projectId={BROWSERBASE_PROJECT_ID}"
             )
-            
+            context = browser.contexts[0]
+            page = agentql.wrap(context.pages[0])
+        else:
+            print("💻 Using local Chromium")
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu'
+                ]
+            )
             context = browser.new_context()
-            
-            # Add cookies if available
-            if cookies:
-                context.add_cookies(cookies)
-                print("✅ Cookies added to browser context")
-            
-            page = context.new_page()
+            page = agentql.wrap(context.new_page())
+        
+        try:
+            # Load cookies if available
+            if cookies_base64:
+                try:
+                    cookies_json = base64.b64decode(cookies_base64).decode('utf-8')
+                    cookies = json.loads(cookies_json)
+                    context.add_cookies(cookies)
+                    print("✅ Loaded cookies from environment")
+                except Exception as e:
+                    print(f"⚠️ Failed to load cookies: {str(e)}")
             
             # Navigate to profile
-            print(f"📄 Navigating to: {url}")
-            page.goto(url, wait_until='networkidle', timeout=30000)
+            print(f"🌐 Navigating to: {profile_url}")
+            page.goto(profile_url, wait_until='networkidle', timeout=60000)
+            page.wait_for_timeout(3000)
             
             # Check if login is required
-            current_url = page.url
-            if 'linkedin.com/login' in current_url or 'linkedin.com/checkpoint' in current_url:
-                print("⚠️ Login required - cookies may have expired")
-                browser.close()
-                return {
-                    "success": False,
-                    "error": "Login required. Please update your LinkedIn cookies.",
-                    "url": url
+            if 'authwall' in page.url or 'login' in page.url:
+                print("🔐 Login required, attempting to login...")
+                
+                if not linkedin_email or not linkedin_password:
+                    raise Exception("LinkedIn credentials not found in environment")
+                
+                # Navigate to login page
+                page.goto('https://www.linkedin.com/login', wait_until='networkidle')
+                page.wait_for_timeout(2000)
+                
+                # Fill login form
+                print("📝 Filling login credentials...")
+                page.fill('input[name="session_key"]', linkedin_email)
+                page.fill('input[name="session_password"]', linkedin_password)
+                
+                # Click login button
+                print("🔑 Clicking login button...")
+                page.click('button[type="submit"]')
+                page.wait_for_timeout(5000)
+                
+                # Handle potential security check
+                if 'checkpoint' in page.url or 'challenge' in page.url:
+                    print("⚠️ Security checkpoint detected - may need manual verification")
+                    # Wait a bit longer for manual intervention if needed
+                    page.wait_for_timeout(10000)
+                
+                # Navigate to profile again after login
+                print(f"🔄 Navigating to profile after login: {profile_url}")
+                page.goto(profile_url, wait_until='networkidle', timeout=60000)
+                page.wait_for_timeout(3000)
+            
+            # Define AgentQL query for LinkedIn profile data
+            PROFILE_QUERY = """
+            {
+                name
+                headline
+                location
+                about
+                experience[] {
+                    title
+                    company
+                    duration
+                    description
                 }
-            
-            # Wait for profile to load
-            page.wait_for_load_state('networkidle')
-            
-            # Define default AgentQL query if no custom fields provided
-            if not fields:
-                PROFILE_QUERY = """
-                {
-                    name
-                    headline
-                    location
-                    about
-                    experience[] {
-                        title
-                        company
-                        duration
-                    }
+                education[] {
+                    school
+                    degree
+                    field
+                    dates
                 }
-                """
-            else:
-                # Build custom query from fields
-                field_queries = []
-                for field_name, field_desc in fields.items():
-                    field_queries.append(f"{field_name}")
-                PROFILE_QUERY = "{\n    " + "\n    ".join(field_queries) + "\n}"
-            
-            print(f"🔍 Extracting data with query:\n{PROFILE_QUERY}")
-            
-            # Use AgentQL to extract data
-            try:
-                response = page.query_data(PROFILE_QUERY)
-                print("✅ Data extracted successfully")
-            except Exception as e:
-                print(f"❌ AgentQL extraction failed: {e}")
-                browser.close()
-                return {
-                    "success": False,
-                    "error": f"Failed to extract data: {str(e)}",
-                    "url": url
-                }
-            
-            browser.close()
-            
-            return {
-                "success": True,
-                "url": url,
-                "data": response
+                skills[]
             }
+            """
             
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "url": url
-        }
+            # Extract data using AgentQL
+            print("🔍 Extracting profile data with AgentQL...")
+            response = page.query_data(PROFILE_QUERY)
+            
+            print("✅ Profile scraped successfully!")
+            return response
+            
+        except Exception as e:
+            print(f"❌ Error during scraping: {str(e)}")
+            # Take screenshot for debugging (if not using BrowserBase)
+            if not BROWSERBASE_API_KEY:
+                try:
+                    page.screenshot(path="error_screenshot.png")
+                    print("📸 Error screenshot saved")
+                except:
+                    pass
+            raise e
+            
+        finally:
+            # Cleanup
+            try:
+                if BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID:
+                    # BrowserBase handles cleanup automatically
+                    pass
+                else:
+                    context.close()
+                    browser.close()
+                print("🧹 Browser cleanup complete")
+            except Exception as e:
+                print(f"⚠️ Cleanup warning: {str(e)}")
 
-# Run this once to save cookies
+
+# Test function for local development
 if __name__ == "__main__":
-    print("=== LinkedIn Cookie Setup ===")
-    print("This will open a browser for you to login manually")
-    save_cookies_from_manual_login()
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    # Test URL
+    test_url = "https://www.linkedin.com/in/williamhgates"
+    
+    print("=" * 80)
+    print("🚀 Starting LinkedIn Profile Scraper Test")
+    print("=" * 80)
+    
+    try:
+        result = scrape_linkedin_profile(test_url)
+        print("\n" + "=" * 80)
+        print("📊 SCRAPED DATA:")
+        print("=" * 80)
+        print(json.dumps(result, indent=2))
+    except Exception as e:
+        print(f"\n❌ Test failed: {str(e)}")
