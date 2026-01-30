@@ -85,8 +85,7 @@ def scrape_linkedin_profile(profile_url):
                 
                 # Handle potential security check
                 if 'checkpoint' in page.url or 'challenge' in page.url:
-                    print("⚠️ Security checkpoint detected - may need manual verification")
-                    # Wait a bit longer for manual intervention if needed
+                    print("⚠️ Security checkpoint detected")
                     page.wait_for_timeout(10000)
                 
                 # Navigate to profile again after login
@@ -105,13 +104,10 @@ def scrape_linkedin_profile(profile_url):
                     title
                     company
                     duration
-                    description
                 }
                 education[] {
                     school
                     degree
-                    field
-                    dates
                 }
                 skills[]
             }
@@ -126,22 +122,12 @@ def scrape_linkedin_profile(profile_url):
             
         except Exception as e:
             print(f"❌ Error during scraping: {str(e)}")
-            # Take screenshot for debugging (if not using BrowserBase)
-            if not BROWSERBASE_API_KEY:
-                try:
-                    page.screenshot(path="error_screenshot.png")
-                    print("📸 Error screenshot saved")
-                except:
-                    pass
             raise e
             
         finally:
             # Cleanup
             try:
-                if BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID:
-                    # BrowserBase handles cleanup automatically
-                    pass
-                else:
+                if not (BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID):
                     context.close()
                     browser.close()
                 print("🧹 Browser cleanup complete")
@@ -154,7 +140,6 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
     
-    # Test URL
     test_url = "https://www.linkedin.com/in/williamhgates"
     
     print("=" * 80)
