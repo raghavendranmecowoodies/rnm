@@ -12,11 +12,28 @@ app = Flask(__name__)
 LINKEDIN_EMAIL = os.environ.get('LINKEDIN_EMAIL', '')
 LINKEDIN_PASSWORD = os.environ.get('LINKEDIN_PASSWORD', '')
 
+@app.route('/')
+def home():
+    """Root endpoint - shows API is running"""
+    return jsonify({
+        "status": "ok",
+        "message": "LinkedIn Scraper API is running on Render",
+        "service": "rnm",
+        "endpoints": {
+            "/health": "GET - Health check",
+            "/scrape": "POST - Scrape LinkedIn profile"
+        }
+    }), 200
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy"}), 200
+
 @app.route('/scrape', methods=['POST'])
 def scrape():
     """
     API endpoint to scrape LinkedIn profiles
-    
     Expected JSON body:
     {
         "url": "https://www.linkedin.com/in/johndoe",
@@ -46,13 +63,13 @@ def scrape():
         
         # Scrape the profile
         result = scrape_linkedin_profile(
-            url, 
-            fields, 
-            linkedin_email, 
+            url,
+            fields,
+            linkedin_email,
             linkedin_password
         )
         
-        return jsonify(result)
+        return jsonify(result), 200
         
     except Exception as e:
         return jsonify({
@@ -60,11 +77,6 @@ def scrape():
             "error": str(e)
         }), 500
 
-@app.route('/health', methods=['GET'])
-def health():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy"})
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
