@@ -4,6 +4,7 @@ import base64
 from playwright.sync_api import sync_playwright
 import agentql
 
+
 # BrowserBase configuration (optional - for remote browser)
 BROWSERBASE_API_KEY = os.getenv('BROWSERBASE_API_KEY', '')
 BROWSERBASE_PROJECT_ID = os.getenv('BROWSERBASE_PROJECT_ID', '')
