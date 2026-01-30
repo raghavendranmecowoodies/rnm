@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: rnm
+    runtime: python
+    plan: free
+    buildCommand: chmod +x build.sh && ./build.sh
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
+    envVars:
+      - key: AGENTQL_API_KEY
+        sync: false
+      - key: LINKEDIN_EMAIL
+        sync: false
+      - key: LINKEDIN_PASSWORD
+        sync: false
+      - key: LINKEDIN_COOKIES_BASE64
+        sync: false
+    buildFilter:
+      paths:
+        - "**"
