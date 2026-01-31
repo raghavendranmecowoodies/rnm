@@ -70,7 +70,7 @@ def scrape():
             }), 400
         
         # Scrape the profile
-        print(f"Starting scrape for: {profile_url}")
+        print(f"🚀 Starting scrape for: {profile_url}")
         result = scrape_linkedin_profile(profile_url)
         
         return jsonify({
@@ -80,7 +80,9 @@ def scrape():
         }), 200
         
     except Exception as e:
-        print(f"Error scraping profile: {str(e)}")
+        print(f"❌ Error scraping profile: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "success": False,
             "error": str(e),
