@@ -4,7 +4,6 @@ import base64
 from playwright.sync_api import sync_playwright
 import agentql
 
-
 # BrowserBase configuration (optional - for remote browser)
 BROWSERBASE_API_KEY = os.getenv('BROWSERBASE_API_KEY', '')
 BROWSERBASE_PROJECT_ID = os.getenv('BROWSERBASE_PROJECT_ID', '')
@@ -24,30 +23,34 @@ def scrape_linkedin_profile(profile_url):
     # Configure AgentQL
     agentql.configure(api_key=agentql_api_key)
     
+    browser = None
+    context = None
+    page = None
+    
     with sync_playwright() as p:
-        # Choose browser: BrowserBase (remote) or local Chromium
-        if BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID:
-            print("🌐 Using BrowserBase (remote browser)")
-            browser = p.chromium.connect_over_cdp(
-                f"wss://connect.browserbase.com?apiKey={BROWSERBASE_API_KEY}&projectId={BROWSERBASE_PROJECT_ID}"
-            )
-            context = browser.contexts[0]
-            page = agentql.wrap(context.pages[0])
-        else:
-            print("💻 Using local Chromium")
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu'
-                ]
-            )
-            context = browser.new_context()
-            page = agentql.wrap(context.new_page())
-        
         try:
+            # Choose browser: BrowserBase (remote) or local Chromium
+            if BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID:
+                print("🌐 Using BrowserBase (remote browser)")
+                browser = p.chromium.connect_over_cdp(
+                    f"wss://connect.browserbase.com?apiKey={BROWSERBASE_API_KEY}&projectId={BROWSERBASE_PROJECT_ID}"
+                )
+                context = browser.contexts[0]
+                page = agentql.wrap(context.pages[0])
+            else:
+                print("💻 Using local Chromium")
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu'
+                    ]
+                )
+                context = browser.new_context()
+                page = agentql.wrap(context.new_page())
+            
             # Load cookies if available
             if cookies_base64:
                 try:
@@ -60,8 +63,8 @@ def scrape_linkedin_profile(profile_url):
             
             # Navigate to profile
             print(f"🌐 Navigating to: {profile_url}")
-            page.goto(profile_url, wait_until='networkidle', timeout=60000)
-            page.wait_for_timeout(3000)
+            page.goto(profile_url, wait_until='domcontentloaded', timeout=60000)
+            page.wait_for_timeout(5000)
             
             # Check if login is required
             if 'authwall' in page.url or 'login' in page.url:
@@ -71,7 +74,7 @@ def scrape_linkedin_profile(profile_url):
                     raise Exception("LinkedIn credentials not found in environment")
                 
                 # Navigate to login page
-                page.goto('https://www.linkedin.com/login', wait_until='networkidle')
+                page.goto('https://www.linkedin.com/login', wait_until='domcontentloaded')
                 page.wait_for_timeout(2000)
                 
                 # Fill login form
@@ -91,8 +94,8 @@ def scrape_linkedin_profile(profile_url):
                 
                 # Navigate to profile again after login
                 print(f"🔄 Navigating to profile after login: {profile_url}")
-                page.goto(profile_url, wait_until='networkidle', timeout=60000)
-                page.wait_for_timeout(3000)
+                page.goto(profile_url, wait_until='domcontentloaded', timeout=60000)
+                page.wait_for_timeout(5000)
             
             # Define AgentQL query for LinkedIn profile data
             PROFILE_QUERY = """
@@ -123,17 +126,42 @@ def scrape_linkedin_profile(profile_url):
             
         except Exception as e:
             print(f"❌ Error during scraping: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise e
             
         finally:
             # Cleanup
+            print("🧹 Starting cleanup...")
             try:
-                if not (BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID):
-                    context.close()
-                    browser.close()
-                print("🧹 Browser cleanup complete")
+                if BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID:
+                    # For BrowserBase, just disconnect
+                    print("🔌 Disconnecting from BrowserBase")
+                    if browser:
+                        try:
+                            browser.close()
+                            print("✅ BrowserBase disconnected")
+                        except Exception as e:
+                            print(f"⚠️ BrowserBase disconnect warning: {str(e)}")
+                else:
+                    # For local browser, close everything
+                    print("🔒 Closing local browser")
+                    if context:
+                        try:
+                            context.close()
+                            print("✅ Context closed")
+                        except Exception as e:
+                            print(f"⚠️ Context close warning: {str(e)}")
+                    if browser:
+                        try:
+                            browser.close()
+                            print("✅ Browser closed")
+                        except Exception as e:
+                            print(f"⚠️ Browser close warning: {str(e)}")
+                
+                print("✅ Cleanup complete")
             except Exception as e:
-                print(f"⚠️ Cleanup warning: {str(e)}")
+                print(f"⚠️ Cleanup error: {str(e)}")
 
 
 # Test function for local development
