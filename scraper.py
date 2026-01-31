@@ -67,33 +67,92 @@ def scrape_linkedin_profile(profile_url):
             page.wait_for_timeout(5000)
             
             # Check if login is required
-            if 'authwall' in page.url or 'login' in page.url:
-                print("🔐 Login required, attempting to login...")
+            if 'authwall' in page.url or 'login' in page.url or 'checkpoint' in page.url:
+                print("🔐 Login wall detected - cookies may be expired")
                 
                 if not linkedin_email or not linkedin_password:
-                    raise Exception("LinkedIn credentials not found in environment")
+                    raise Exception("LinkedIn credentials not found. Cookies expired and no credentials provided.")
                 
-                # Navigate to login page
-                page.goto('https://www.linkedin.com/login', wait_until='domcontentloaded')
-                page.wait_for_timeout(2000)
+                print("🔄 Attempting login...")
                 
-                # Fill login form
-                print("📝 Filling login credentials...")
-                page.fill('input[name="session_key"]', linkedin_email)
-                page.fill('input[name="session_password"]', linkedin_password)
+                # Go to login page
+                page.goto('https://www.linkedin.com/login', wait_until='domcontentloaded', timeout=30000)
+                page.wait_for_timeout(3000)
+                
+                # Wait for and fill email field - try multiple selectors
+                print("📝 Looking for email field...")
+                try:
+                    page.wait_for_selector('input#username', timeout=10000)
+                    page.fill('input#username', linkedin_email)
+                    print("✅ Email filled (using #username)")
+                except:
+                    try:
+                        page.wait_for_selector('input[name="session_key"]:visible', timeout=5000)
+                        page.fill('input[name="session_key"]:visible', linkedin_email)
+                        print("✅ Email filled (using name=session_key)")
+                    except:
+                        try:
+                            page.wait_for_selector('input[type="email"]', timeout=5000)
+                            page.fill('input[type="email"]', linkedin_email)
+                            print("✅ Email filled (using type=email)")
+                        except Exception as e:
+                            print(f"❌ Could not find email field: {str(e)}")
+                            raise Exception("Login form not found - email field")
+                
+                # Wait for and fill password field
+                print("🔑 Looking for password field...")
+                try:
+                    page.wait_for_selector('input#password', timeout=10000)
+                    page.fill('input#password', linkedin_password)
+                    print("✅ Password filled (using #password)")
+                except:
+                    try:
+                        page.wait_for_selector('input[name="session_password"]:visible', timeout=5000)
+                        page.fill('input[name="session_password"]:visible', linkedin_password)
+                        print("✅ Password filled (using name=session_password)")
+                    except:
+                        try:
+                            page.wait_for_selector('input[type="password"]', timeout=5000)
+                            page.fill('input[type="password"]', linkedin_password)
+                            print("✅ Password filled (using type=password)")
+                        except Exception as e:
+                            print(f"❌ Could not find password field: {str(e)}")
+                            raise Exception("Login form not found - password field")
                 
                 # Click login button
-                print("🔑 Clicking login button...")
-                page.click('button[type="submit"]')
-                page.wait_for_timeout(5000)
+                print("🚀 Clicking login button...")
+                try:
+                    page.wait_for_selector('button[type="submit"]', timeout=5000)
+                    page.click('button[type="submit"]')
+                    print("✅ Clicked submit button")
+                except:
+                    try:
+                        page.click('button:has-text("Sign in")')
+                        print("✅ Clicked 'Sign in' button")
+                    except Exception as e:
+                        print(f"❌ Could not find login button: {str(e)}")
+                        raise Exception("Login button not found")
                 
-                # Handle potential security check
-                if 'checkpoint' in page.url or 'challenge' in page.url:
-                    print("⚠️ Security checkpoint detected")
-                    page.wait_for_timeout(10000)
+                print("⏳ Waiting for login to complete...")
+                page.wait_for_timeout(8000)
                 
-                # Navigate to profile again after login
-                print(f"🔄 Navigating to profile after login: {profile_url}")
+                # Check if verification is needed
+                current_url = page.url
+                print(f"📍 Current URL after login: {current_url}")
+                
+                if 'checkpoint' in current_url or 'challenge' in current_url:
+                    print("⚠️ LinkedIn security checkpoint detected!")
+                    print("⚠️ Manual verification may be required")
+                    raise Exception("LinkedIn security checkpoint - please verify your account manually and update cookies")
+                
+                if 'feed' in current_url or 'mynetwork' in current_url:
+                    print("✅ Login successful!")
+                elif 'login' in current_url:
+                    print("❌ Login failed - still on login page")
+                    raise Exception("Login failed - credentials may be incorrect")
+                
+                # Navigate to profile again
+                print(f"🔄 Navigating to profile: {profile_url}")
                 page.goto(profile_url, wait_until='domcontentloaded', timeout=60000)
                 page.wait_for_timeout(5000)
             
