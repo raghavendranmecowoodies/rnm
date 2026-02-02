@@ -48,7 +48,10 @@ def scrape_linkedin_profile(profile_url):
                         '--disable-gpu'
                     ]
                 )
-                context = browser.new_context()
+                context = browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                )
                 page = agentql.wrap(context.new_page())
             
             # Load cookies if available
@@ -68,95 +71,119 @@ def scrape_linkedin_profile(profile_url):
             
             # Check if login is required
             if 'authwall' in page.url or 'login' in page.url or 'checkpoint' in page.url:
-                print("🔐 Login wall detected - cookies may be expired")
+                print("🔐 Login wall detected - attempting login with JavaScript injection")
                 
                 if not linkedin_email or not linkedin_password:
-                    raise Exception("LinkedIn credentials not found. Cookies expired and no credentials provided.")
-                
-                print("🔄 Attempting login...")
+                    raise Exception("LinkedIn credentials not found")
                 
                 # Go to login page
                 page.goto('https://www.linkedin.com/login', wait_until='domcontentloaded', timeout=30000)
                 page.wait_for_timeout(3000)
                 
-                # Wait for and fill email field - try multiple selectors
-                print("📝 Looking for email field...")
+                # Use JavaScript to fill the form (works even with hidden fields)
+                print("📝 Filling login form with JavaScript...")
                 try:
-                    page.wait_for_selector('input#username', state='visible', timeout=10000)
-                    page.fill('input#username:visible', linkedin_email)
-                    print("✅ Email filled (using #username)")
-                except:
-                    try:
-                        page.wait_for_selector('input[name="session_key"]:visible', timeout=5000)
-                        page.fill('input[name="session_key"]:visible', linkedin_email)
-                        print("✅ Email filled (using name=session_key)")
-                    except:
-                        try:
-                            page.wait_for_selector('input[type="email"]:visible', timeout=5000)
-                            page.fill('input[type="email"]:visible', linkedin_email)
-                            print("✅ Email filled (using type=email)")
-                        except Exception as e:
-                            print(f"❌ Could not find email field: {str(e)}")
-                            raise Exception("Login form not found - email field")
-                
-                # Wait for and fill password field
-                print("🔑 Looking for password field...")
-                try:
-                    page.wait_for_selector('input#password', state='visible', timeout=10000)
-                    page.fill('input#password:visible', linkedin_password)
-                    print("✅ Password filled (using #password)")
-                except:
-                    try:
-                        page.wait_for_selector('input[name="session_password"]:visible', timeout=5000)
-                        page.fill('input[name="session_password"]:visible', linkedin_password)
-                        print("✅ Password filled (using name=session_password)")
-                    except:
-                        try:
-                            page.wait_for_selector('input[type="password"]:visible', timeout=5000)
-                            page.fill('input[type="password"]:visible', linkedin_password)
-                            print("✅ Password filled (using type=password)")
-                        except Exception as e:
-                            print(f"❌ Could not find password field: {str(e)}")
-                            raise Exception("Login form not found - password field")
+                    page.evaluate(f'''
+                        // Find and fill email
+                        const emailSelectors = [
+                            'input#username',
+                            'input[name="session_key"]',
+                            'input[type="email"]',
+                            'input[autocomplete="username"]'
+                        ];
+                        
+                        let emailFilled = false;
+                        for (const selector of emailSelectors) {{
+                            const emailInput = document.querySelector(selector);
+                            if (emailInput) {{
+                                emailInput.value = "{linkedin_email}";
+                                emailInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                emailInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                console.log('Email filled with: ' + selector);
+                                emailFilled = true;
+                                break;
+                            }}
+                        }}
+                        
+                        if (!emailFilled) {{
+                            throw new Error('Could not find email field');
+                        }}
+                        
+                        // Find and fill password
+                        const passwordSelectors = [
+                            'input#password',
+                            'input[name="session_password"]',
+                            'input[type="password"]'
+                        ];
+                        
+                        let passwordFilled = false;
+                        for (const selector of passwordSelectors) {{
+                            const passwordInput = document.querySelector(selector);
+                            if (passwordInput) {{
+                                passwordInput.value = "{linkedin_password}";
+                                passwordInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                passwordInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                console.log('Password filled with: ' + selector);
+                                passwordFilled = true;
+                                break;
+                            }}
+                        }}
+                        
+                        if (!passwordFilled) {{
+                            throw new Error('Could not find password field');
+                        }}
+                    ''')
+                    print("✅ Form filled successfully")
+                except Exception as e:
+                    print(f"❌ JavaScript fill failed: {str(e)}")
+                    raise Exception("Login form not found - could not fill fields")
                 
                 # Click login button
                 print("🚀 Clicking login button...")
                 try:
-                    page.wait_for_selector('button[type="submit"]', state='visible', timeout=5000)
-                    page.click('button[type="submit"]')
-                    print("✅ Clicked submit button")
-                except:
-                    try:
-                        page.click('button:has-text("Sign in")')
-                        print("✅ Clicked 'Sign in' button")
-                    except Exception as e:
-                        print(f"❌ Could not find login button: {str(e)}")
-                        raise Exception("Login button not found")
+                    # Try multiple button selectors
+                    page.evaluate('''
+                        const buttonSelectors = [
+                            'button[type="submit"]',
+                            'button[data-litms-control-urn]',
+                            'button.btn__primary--large'
+                        ];
+                        
+                        for (const selector of buttonSelectors) {
+                            const button = document.querySelector(selector);
+                            if (button) {
+                                button.click();
+                                console.log('Button clicked: ' + selector);
+                                break;
+                            }
+                        }
+                    ''')
+                    print("✅ Login button clicked")
+                except Exception as e:
+                    print(f"❌ Could not click button: {str(e)}")
+                    raise Exception("Login button not found")
                 
                 print("⏳ Waiting for login to complete...")
-                page.wait_for_timeout(8000)
+                page.wait_for_timeout(10000)
                 
-                # Check if verification is needed
+                # Check login status
                 current_url = page.url
-                print(f"📍 Current URL after login: {current_url}")
+                print(f"📍 Current URL: {current_url}")
                 
                 if 'checkpoint' in current_url or 'challenge' in current_url:
-                    print("⚠️ LinkedIn security checkpoint detected!")
-                    print("⚠️ Manual verification may be required")
-                    raise Exception("LinkedIn security checkpoint - please verify your account manually and update cookies")
+                    raise Exception("LinkedIn security checkpoint - manual verification required")
                 
                 if 'feed' in current_url or 'mynetwork' in current_url:
                     print("✅ Login successful!")
                 elif 'login' in current_url:
-                    print("❌ Login failed - still on login page")
-                    raise Exception("Login failed - credentials may be incorrect")
+                    raise Exception("Login failed - check credentials")
                 
-                # Navigate to profile again
-                print(f"🔄 Navigating to profile: {profile_url}")
+                # Navigate to profile
+                print(f"🔄 Going to profile: {profile_url}")
                 page.goto(profile_url, wait_until='domcontentloaded', timeout=60000)
                 page.wait_for_timeout(5000)
             
-            # Define AgentQL query for LinkedIn profile data
+            # Define AgentQL query
             PROFILE_QUERY = """
             {
                 name
@@ -176,54 +203,35 @@ def scrape_linkedin_profile(profile_url):
             }
             """
             
-            # Extract data using AgentQL
-            print("🔍 Extracting profile data with AgentQL...")
+            # Extract data
+            print("🔍 Extracting profile data...")
             response = page.query_data(PROFILE_QUERY)
             
             print("✅ Profile scraped successfully!")
             return response
             
         except Exception as e:
-            print(f"❌ Error during scraping: {str(e)}")
+            print(f"❌ Error: {str(e)}")
             import traceback
             traceback.print_exc()
             raise e
             
         finally:
-            # Cleanup
-            print("🧹 Starting cleanup...")
+            print("🧹 Cleanup...")
             try:
                 if BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID:
-                    # For BrowserBase, just disconnect
-                    print("🔌 Disconnecting from BrowserBase")
                     if browser:
-                        try:
-                            browser.close()
-                            print("✅ BrowserBase disconnected")
-                        except Exception as e:
-                            print(f"⚠️ BrowserBase disconnect warning: {str(e)}")
+                        browser.close()
                 else:
-                    # For local browser, close everything
-                    print("🔒 Closing local browser")
                     if context:
-                        try:
-                            context.close()
-                            print("✅ Context closed")
-                        except Exception as e:
-                            print(f"⚠️ Context close warning: {str(e)}")
+                        context.close()
                     if browser:
-                        try:
-                            browser.close()
-                            print("✅ Browser closed")
-                        except Exception as e:
-                            print(f"⚠️ Browser close warning: {str(e)}")
-                
+                        browser.close()
                 print("✅ Cleanup complete")
             except Exception as e:
                 print(f"⚠️ Cleanup error: {str(e)}")
 
 
-# Test function for local development
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
@@ -231,14 +239,14 @@ if __name__ == "__main__":
     test_url = "https://www.linkedin.com/in/williamhgates"
     
     print("=" * 80)
-    print("🚀 Starting LinkedIn Profile Scraper Test")
+    print("🚀 LinkedIn Scraper Test")
     print("=" * 80)
     
     try:
         result = scrape_linkedin_profile(test_url)
         print("\n" + "=" * 80)
-        print("📊 SCRAPED DATA:")
+        print("📊 RESULT:")
         print("=" * 80)
         print(json.dumps(result, indent=2))
     except Exception as e:
-        print(f"\n❌ Test failed: {str(e)}")
+        print(f"\n❌ Failed: {str(e)}")
