@@ -82,8 +82,8 @@ def scrape_linkedin_profile(profile_url):
                 # Wait for and fill email field - try multiple selectors
                 print("📝 Looking for email field...")
                 try:
-                    page.wait_for_selector('input#username', timeout=10000)
-                    page.fill('input#username', linkedin_email)
+                    page.wait_for_selector('input#username', state='visible', timeout=10000)
+                    page.fill('input#username:visible', linkedin_email)
                     print("✅ Email filled (using #username)")
                 except:
                     try:
@@ -92,8 +92,8 @@ def scrape_linkedin_profile(profile_url):
                         print("✅ Email filled (using name=session_key)")
                     except:
                         try:
-                            page.wait_for_selector('input[type="email"]', timeout=5000)
-                            page.fill('input[type="email"]', linkedin_email)
+                            page.wait_for_selector('input[type="email"]:visible', timeout=5000)
+                            page.fill('input[type="email"]:visible', linkedin_email)
                             print("✅ Email filled (using type=email)")
                         except Exception as e:
                             print(f"❌ Could not find email field: {str(e)}")
@@ -102,8 +102,8 @@ def scrape_linkedin_profile(profile_url):
                 # Wait for and fill password field
                 print("🔑 Looking for password field...")
                 try:
-                    page.wait_for_selector('input#password', timeout=10000)
-                    page.fill('input#password', linkedin_password)
+                    page.wait_for_selector('input#password', state='visible', timeout=10000)
+                    page.fill('input#password:visible', linkedin_password)
                     print("✅ Password filled (using #password)")
                 except:
                     try:
@@ -112,8 +112,8 @@ def scrape_linkedin_profile(profile_url):
                         print("✅ Password filled (using name=session_password)")
                     except:
                         try:
-                            page.wait_for_selector('input[type="password"]', timeout=5000)
-                            page.fill('input[type="password"]', linkedin_password)
+                            page.wait_for_selector('input[type="password"]:visible', timeout=5000)
+                            page.fill('input[type="password"]:visible', linkedin_password)
                             print("✅ Password filled (using type=password)")
                         except Exception as e:
                             print(f"❌ Could not find password field: {str(e)}")
@@ -122,7 +122,7 @@ def scrape_linkedin_profile(profile_url):
                 # Click login button
                 print("🚀 Clicking login button...")
                 try:
-                    page.wait_for_selector('button[type="submit"]', timeout=5000)
+                    page.wait_for_selector('button[type="submit"]', state='visible', timeout=5000)
                     page.click('button[type="submit"]')
                     print("✅ Clicked submit button")
                 except:
