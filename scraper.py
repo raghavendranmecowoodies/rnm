@@ -54,13 +54,43 @@ def scrape_linkedin_profile(profile_url):
                 )
                 page = agentql.wrap(context.new_page())
             
-            # Load cookies if available
+            # Load cookies if available - IMPROVED HANDLING
             if cookies_base64:
                 try:
                     cookies_json = base64.b64decode(cookies_base64).decode('utf-8')
-                    cookies = json.loads(cookies_json)
-                    context.add_cookies(cookies)
-                    print("✅ Loaded cookies from environment")
+                    cookies_data = json.loads(cookies_json)
+                    
+                    # Handle both formats: array of cookies or {cookies: [...]}
+                    if isinstance(cookies_data, dict) and 'cookies' in cookies_data:
+                        cookies_list = cookies_data['cookies']
+                    elif isinstance(cookies_data, list):
+                        cookies_list = cookies_data
+                    else:
+                        cookies_list = []
+                    
+                    # Add cookies to context
+                    added_count = 0
+                    for cookie in cookies_list:
+                        # Remove fields that Playwright doesn't accept
+                        clean_cookie = {
+                            'name': cookie['name'],
+                            'value': cookie['value'],
+                            'domain': cookie['domain'],
+                            'path': cookie.get('path', '/'),
+                            'secure': cookie.get('secure', True),
+                            'httpOnly': cookie.get('httpOnly', False)
+                        }
+                        # Only add sameSite if it's valid
+                        if cookie.get('sameSite') in ['Strict', 'Lax', 'None']:
+                            clean_cookie['sameSite'] = cookie['sameSite']
+                        
+                        try:
+                            context.add_cookies([clean_cookie])
+                            added_count += 1
+                        except Exception as e:
+                            print(f"⚠️ Failed to add cookie {cookie['name']}: {str(e)}")
+                    
+                    print(f"✅ Loaded {added_count}/{len(cookies_list)} cookies from environment")
                 except Exception as e:
                     print(f"⚠️ Failed to load cookies: {str(e)}")
             
